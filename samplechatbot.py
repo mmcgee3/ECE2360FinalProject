@@ -22,7 +22,7 @@ def parse_command(command):
     
     for token in doc:
         if token.text in {"on", "off"}:
-            action = token.text.upper()
+            action = token.text.lower()
         elif token.text in {"red", "green", "blue"}:
             if token.text == "red":
                 color = "255, 0, 0"

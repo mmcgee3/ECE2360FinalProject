@@ -34,9 +34,9 @@ def parse_command(command):
     
     # Format the command for the Arduino
     if action == "OFF":
-        return "<Off, 0, 0, 0>"
+        return "<off, 0, 0, 0>"
     elif action == "ON" and color:
-        return f"<ON, {color}>"
+        return f"<on, {color}>"
     else:
         return None
 
