@@ -2,7 +2,6 @@ import speech_recognition as sr
 import serial
 import time
 import spacy
-import webcolors
 
 # Load the English language model from spaCy
 nlp = spacy.load("en_core_web_sm")
@@ -13,13 +12,6 @@ time.sleep(2)
 def sendData(x): 
     arduino.write(bytes(x, 'utf-8')) 
     time.sleep(0.05)
-    
-def getColor(color):
-    try:
-        rgb = webcolors.name_to_rgb(color)
-        return f"{rgb.red}, {rgb.green}, {rgb.blue}"
-    except ValueError:
-        return 
 
 def parse_command(command):
     # Process the user input using spaCy
@@ -32,10 +24,13 @@ def parse_command(command):
     for token in doc:
         if token.text in {"on", "off"}:
             action = token.text.upper()
-        else:
-            color = getColor(token.text)
-            if color:
-                break
+        elif token.text in {"red", "green", "blue"}:
+            if token.text == "red":
+                color = "255, 0, 0"
+            elif token.text == "green":
+                color = "0, 255, 0"
+            elif token.text == "blue":
+                color = "0, 0, 255"
     
     # Format the command for the Arduino
     if action == "OFF":
@@ -98,28 +93,4 @@ while True:
     recognizer = sr.Recognizer()
     microphone = sr.Microphone()
     
-    # give the user 5 attempts to get a clear audio command
-    PROMPT_LIMIT = 5
-    for j in range(PROMPT_LIMIT):
-        print("Say a command for the LED (e.g., 'turn on red', 'turn off'): ")
-        voice_command = recognize_speech_from_mic(recognizer, microphone)
-        if voice_command["transcription"]:
-            break
-        if not voice_command["success"]:
-            break
-        print("I didn't catch that. What did you say?\n")
-        
-    if voice_command["error"]:
-        print("ERROR: {}".format(voice_command["error"]))
-        break
     
-    print("You said: {}".format(voice_command["transcription"]))
-    
-    
-    command = parse_command(voice_command["transcription"])
-    
-    if command:
-        print(f"Sending command to Arduino: {command}")
-        sendData(command)
-    else:
-        print("Invalid command.")
