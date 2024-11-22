@@ -2,6 +2,7 @@ import speech_recognition as sr
 import serial
 import time
 import spacy
+import webcolors
 
 # Load the English language model from spaCy
 nlp = spacy.load("en_core_web_sm")
@@ -12,6 +13,13 @@ time.sleep(2)
 def sendData(x): 
     arduino.write(bytes(x, 'utf-8')) 
     time.sleep(0.05)
+    
+def getColor(color):
+    try:
+        rgb = webcolors.name_to_rgb(color)
+        return f"{rgb.red}, {rgb.green}, {rgb.blue}"
+    except ValueError:
+        return 
 
 def parse_command(command):
     # Process the user input using spaCy
@@ -24,13 +32,10 @@ def parse_command(command):
     for token in doc:
         if token.text in {"on", "off"}:
             action = token.text.upper()
-        elif token.text in {"red", "green", "blue"}:
-            if token.text == "red":
-                color = "255, 0, 0"
-            elif token.text == "green":
-                color = "0, 255, 0"
-            elif token.text == "blue":
-                color = "0, 0, 255"
+        else:
+            color = getColor(token.text)
+            if color:
+                break
     
     # Format the command for the Arduino
     if action == "OFF":
@@ -89,8 +94,11 @@ def recognize_speech_from_mic(recognizer, microphone):
     return response
 
 while True:
-    # create recognizer and mic instances
     recognizer = sr.Recognizer()
     microphone = sr.Microphone()
+
+    PROMPT_LIMIT = 5
+    listening = False
+    user_color = None  # Variable to store the user's selected color
     
-    
+    print("Waiting for wake word. Say 'computer' to activate.")
