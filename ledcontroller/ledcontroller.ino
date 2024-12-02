@@ -79,5 +79,11 @@ void controlLED(String state, int r, int g, int b) {
       strip.setPixelColor(i, 0, 0, 0); // Turn off each LED
     }
     strip.show(); // Update the LED strip
+  } else if (state == "wake") {
+    for (int i = 0; i < NUM_LEDS; i++) {
+      strip.setPixelColor(i, r, g, b); // Set each LED to the specified color
+      strip.show(); // Update the LED strip
+      delay(50);
+    }
   }
 }

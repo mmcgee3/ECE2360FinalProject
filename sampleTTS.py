@@ -1,48 +1,58 @@
-import serial
-import pyttsx3
-import wave
+import asyncio
+from bleak import BleakClient, BleakScanner
+from gtts import gTTS
+from pydub import AudioSegment
 import os
-import time
 
-arduino = serial.Serial(port='/dev/cu.usbserial-120', baudrate=9600, timeout=.1)
-time.sleep(2)
+SERVICE_UUID = "8785d8b3-9d23-473b-aee5-3fabe2ba9583"
+CHARACTERISTIC_UUID_RX = "b2bcd13b-aab6-4660-92ae-40abf6941fce"
 
-def text_to_speech_to_wav(text, output_file):
-    """Convert text to speech and save as a WAV file."""
-    engine = pyttsx3.init()
-    engine.save_to_file(text, output_file)
-    engine.runAndWait()
+async def find_and_connect(target_name):
+    """Find and connect to the Bluetooth device by name."""
+    devices = await BleakScanner.discover()
+    for device in devices:
+        if device.name and target_name in device.name:  # Check if device.name is not None
+            print(f"Found target device: {device.name} ({device.address})")
+            return device.address
+    print("Target device not found.")
+    return None
 
-def send_audio_to_arduino(wav_file, serial_port):
-    """Send audio data from a WAV file to the Arduino."""
-    with wave.open(wav_file, "rb") as wav_file:
-        # Ensure the format matches
-        assert wav_file.getsampwidth() == 2  # 16-bit
-        assert wav_file.getframerate() == 44100  # 44.1 kHz
-        assert wav_file.getnchannels() == 1  # Mono
-
-        # Read and send audio data in chunks
-        while True:
-            data = wav_file.readframes(128)  # Read 128 frames at a time
-            if not data:
-                break  # End of file
-            serial_port.write(data)  # Send data over serial
-            time.sleep(128 / 44100)  # Maintain playback rate
+async def send_text_as_audio(address):
+    """Send user-input text converted to speech to the ESP32."""
+    async with BleakClient(address) as client:
+        print("Connected to the ESP32")
+        user_input = input("Enter text to convert to speech: ")
         
-while True:
-    # Get user input
-    user_input = input("Enter a command (or 'exit' to quit): ")
-    if user_input.lower() == "exit":
-        break
-
-    # Convert text to speech and save as WAV
-    wav_file = "command.wav"
-    text_to_speech_to_wav(user_input, wav_file)
-
-    # Send the generated audio to the Arduino
-    send_audio_to_arduino(wav_file, arduino)
-
-    # Clean up the generated WAV file
-    os.remove(wav_file)
+        # Convert text to speech and save as an audio file (MP3)
+        tts = gTTS(text=user_input, lang="en")
+        mp3_file_path = "output.mp3"
+        tts.save(mp3_file_path)
+        print(f"Audio saved to {mp3_file_path}")
         
-arduino.close()
+        # Convert the MP3 file to WAV using pydub
+        wav_file_path = "output.wav"
+        audio = AudioSegment.from_mp3(mp3_file_path)
+        audio.export(wav_file_path, format="wav")
+        print(f"Audio converted to WAV and saved to {wav_file_path}")
+        
+        # Play the audio locally (using default player)
+        os.system(f"afplay {wav_file_path}" if os.name == "posix" else f"start {wav_file_path}")
+        
+        # Send the WAV audio data to ESP32 via BLE
+        with open(wav_file_path, "rb") as audio_file:
+            data = audio_file.read(512)
+            while data:
+                await client.write_gatt_char(CHARACTERISTIC_UUID_RX, data)
+                data = audio_file.read(512)
+        
+        print("Audio sent to ESP32.")
+        os.remove(mp3_file_path)
+        os.remove(wav_file_path)
+
+if __name__ == "__main__":
+    target_name = "ESP32_Bluetooth"
+    address = asyncio.run(find_and_connect(target_name))
+    if address:
+        asyncio.run(send_text_as_audio(address))
+    else:
+        print("ESP32 not found. Ensure it is powered on and in range.")
