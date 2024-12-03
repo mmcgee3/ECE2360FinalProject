@@ -41,7 +41,6 @@ HTML4_NAMES = {
 arduino = serial.Serial(port='/dev/cu.usbserial-130', baudrate=9600, timeout=.1)
 time.sleep(2)
 
-
 def get_weather(location="Columbus"):
     """Fetches the current weather for a given location."""
     params = {
@@ -53,17 +52,16 @@ def get_weather(location="Columbus"):
         response = requests.get(WEATHER_API_URL, params=params)
         response.raise_for_status()
         weather_data = response.json()
-        description = weather_data["weather"][0]["description"]
         temp = weather_data["main"]["temp"]
-        weather_info = f"The current weather in {location} is {description} with a temperature of {temp}°F."
-        return weather_info
+        return location, f"{temp:.1f}°F"
     except requests.RequestException as e:
-        return f"Unable to fetch weather data: {e}"
+        return "Error", "Unable to fetch data"
 
-def sendData(x): 
-    arduino.write(bytes(x, 'utf-8')) 
+def sendData(message, state, r, g, b):
+    """Send formatted data to the Arduino."""
+    arduino.write(bytes(f"<{message}, {state}, {r}, {g}, {b}>", 'utf-8'))
     time.sleep(0.05)
-    
+
 def getColor(color):
     try:
         rgb = webcolors.name_to_rgb(color)
@@ -105,84 +103,61 @@ while True:
     microphone = sr.Microphone()
     
     # Wait for wake word
-    while not listening:
-        wake_message = "Waiting for wake word."
-        print(wake_message)
-        speak_text(wake_message)
+    if not listening:
+        print("Waiting for wake word or motion detection.")
         voice_command = recognize_speech_from_mic(recognizer, microphone)
 
         if voice_command["error"]:
-            error_message = f"ERROR: {voice_command['error']}"
-            print(error_message)
-            speak_text(error_message)
             continue
 
         if voice_command["transcription"] and "computer" in voice_command["transcription"].lower():
             listening = True
-            listening_message = "Welcome sir."
-            sendData(f"<wake, {user_color}>")
-            print(listening_message)
-            speak_text(listening_message)
+            sendData("Welcome sir.", "wake", 0, 150, 255)
+            speak_text("Welcome sir.")
+        # Check for "WAKE" signal from Arduino
+        if arduino.in_waiting > 0:
+            data = arduino.readline().decode('utf-8').strip()
+            if data == "WAKE":
+                listening = True
+                wake_message = "Motion detected. Welcome sir."
+                sendData(f"<wake, {user_color}>")
+                print(wake_message)
+                speak_text(wake_message)
 
     # Process commands
-    while listening:
-        command_prompt = "Waiting for command."
-        print(command_prompt)
-        speak_text(command_prompt)
+    if listening:
+        print("Waiting for command.")
         voice_command = recognize_speech_from_mic(recognizer, microphone)
 
         if voice_command["error"]:
-            error_message = f"ERROR: {voice_command['error']}"
-            print(error_message)
-            speak_text(error_message)
             continue
 
         if voice_command["transcription"]:
-            user_input = f"You said: {voice_command['transcription']}"
-            print(user_input)
             doc = nlp(voice_command["transcription"].lower())
             
-            # Handle "weather" command
             if "weather" in voice_command["transcription"].lower():
-                location = "Columbus"  # Default location
+                location = "Columbus"
                 for token in doc:
-                    if token.pos_ == "PROPN":  # Extract proper nouns as potential location names
+                    if token.pos_ == "PROPN":
                         location = token.text
                         break
-                weather_message = get_weather(location)
-                print(weather_message)
-                speak_text(weather_message)
+                location, temp = get_weather(location)
+                sendData(f"{location}", "weather", 0, 0, 255)
+                sendData(f"{temp}", "weather", 0, 0, 255)
+                speak_text(f"The weather in {location} is {temp}.")
 
-            # Check for color command
-            elif "set" in voice_command["transcription"].lower() and "color" in voice_command["transcription"].lower():
-                # Extract color name
+            elif "set color" in voice_command["transcription"].lower():
                 for token in doc:
                     if token.text in HTML4_NAMES:
                         color_rgb = getColor(token.text)
                         if color_rgb:
+                            r, g, b = map(int, color_rgb.split(", "))
+                            sendData(f"Setting color to {token.text}", "on", r, g, b)
+                            speak_text(f"Setting LED color to {token.text}")
                             user_color = color_rgb
-                            success_message = f"Setting LED color to {token.text}"
-                            sendData(f"<on, {user_color}>")
-                            print(success_message)
-                            speak_text(success_message)
                             break
-                        else:
-                            error_message = f"Color '{token.text}' not recognized."
-                            print(error_message)
-                            speak_text(error_message)
-                            break
-            
-            # Handle "turn off" command
-            elif "turn off" in voice_command["transcription"].lower():
-                turn_off_message = "Turning off system."
-                sendData(f"<off, {user_color}>")
-                print(turn_off_message)
-                speak_text(turn_off_message)
-                listening = False
-                break
 
-            # Handle unrecognized commands
-            else:
-                unrecognized_message = "Command not recognized. Please try again."
-                print(unrecognized_message)
-                speak_text(unrecognized_message)
+            elif "turn off" in voice_command["transcription"].lower():
+                sendData("Goodbye", "off", 0, 0, 0)
+                speak_text("Turning off system.")
+                listening = False
